@@ -3,7 +3,8 @@ pragma solidity 0.8.20;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { IFlashLoanReceiver, IThunderLoan } from "../../src/interfaces/IFlashLoanReceiver.sol";
+import { IFlashLoanReceiver,IThunderLoan } from "../../src/interfaces/IFlashLoanReceiver.sol";
+// import {IThunderLoan} from '../../src/interfaces/IThunderLoan.sol';
 
 contract MockFlashLoanReceiver {
     error MockFlashLoanReceiver__onlyOwner();
@@ -28,7 +29,7 @@ contract MockFlashLoanReceiver {
         uint256 amount,
         uint256 fee,
         address initiator,
-        bytes calldata /*  params */
+        bytes calldata /*params*/
     )
         external
         returns (bool)
@@ -40,6 +41,12 @@ contract MockFlashLoanReceiver {
         if (msg.sender != s_thunderLoan) {
             revert MockFlashLoanReceiver__onlyThunderLoan();
         }
+        // (bytes memory depositCall, bytes memory redeemCall) = abi.decode(params, (bytes, bytes));
+        // IERC20(token).approve(address(s_thunderLoan), amount);
+        // (bool successDeposit, ) = address(s_thunderLoan).call(depositCall);
+        // require(successDeposit, "Depsoit failed");
+        // (bool successRedeem, ) = address(s_thunderLoan).call(redeemCall);
+        // require(successRedeem, "Redeem failed");
         IERC20(token).approve(s_thunderLoan, amount + fee);
         IThunderLoan(s_thunderLoan).repay(token, amount + fee);
         s_balanceAfterFlashLoan = IERC20(token).balanceOf(address(this));
