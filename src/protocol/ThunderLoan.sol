@@ -74,7 +74,7 @@ import { OracleUpgradeable } from "./OracleUpgradeable.sol";
 import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 import { IFlashLoanReceiver } from "../interfaces/IFlashLoanReceiver.sol";
 //@audit-info should implement this interface of this contract
-import {IThunderLoan} from '../interfaces/IThunderLoan.sol';
+// import {IThunderLoan} from '../interfaces/IThunderLoan.sol';
 
 contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, OracleUpgradeable {
     error ThunderLoan__NotAllowedToken(IERC20 token);
@@ -97,6 +97,7 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
     mapping(IERC20 => AssetToken) public s_tokenToAssetToken;
 
     // The fee in WEI, it should have 18 decimals. Each flash loan takes a flat fee of the token price.
+    //@audit-info this should be constant/immutable as this is not changed anywhere
     uint256 private s_feePrecision;
     uint256 private s_flashLoanFee; // 0.3% ETH fee
 
@@ -145,19 +146,21 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
     function initialize(address tswapAddress) external initializer {
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
-        __Oracle_init(tswapAddress);
+        __Oracle_init(tswapAddress); //@audit-q using t-swap for some kind of oracle perhaps
         //@audit-low constants should be used instead of literals/magic numbers
         s_feePrecision = 1e18;
         s_flashLoanFee = 3e15; // 0.3% ETH fee
     }
 
+    //@audit-info no netspec?
     function deposit(IERC20 token, uint256 amount) external revertIfZero(amount) revertIfNotAllowedToken(token) {
         AssetToken assetToken = s_tokenToAssetToken[token];
         uint256 exchangeRate = assetToken.getExchangeRate();
         uint256 mintAmount = (amount * assetToken.EXCHANGE_RATE_PRECISION()) / exchangeRate;
         emit Deposit(msg.sender, token, amount);
         assetToken.mint(msg.sender, mintAmount);
-        //@audit-q why the exchange rate is getting updated here based on the fee of flashloan, when the user is just adding liquidity not borrowing tokens
+        //@audit-q why the exchange rate is getting updated here based on the fee of flashloan, when the user is just
+        // adding liquidity not borrowing tokens
         uint256 calculatedFee = getCalculatedFee(token, amount);
         //@audit-high Each deposit artificially inflates the exchange rate
         assetToken.updateExchangeRate(calculatedFee);
@@ -186,8 +189,10 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         assetToken.burn(msg.sender, amountOfAssetToken);
         assetToken.transferUnderlyingTo(msg.sender, amountUnderlying);
     }
-    
-    //@audit-q reentrancy?
+
+    //@audit-info netspec?
+    //@audit-high users are not forced to call repay function, they are allowed to transfer tokens for repaying the
+    // flashloan
     function flashloan(
         address receiverAddress,
         IERC20 token,
@@ -219,7 +224,6 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         s_currentlyFlashLoaning[token] = true;
         assetToken.transferUnderlyingTo(receiverAddress, amount);
         // slither-disable-next-line unused-return reentrancy-vulnerabilities-2
-        //@audit-q do we need the return value of function call
         receiverAddress.functionCall(
             abi.encodeCall(
                 IFlashLoanReceiver.executeOperation,
@@ -234,12 +238,14 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         );
 
         uint256 endingBalance = token.balanceOf(address(assetToken));
+        //token < token + WETH
         if (endingBalance < startingBalance + fee) {
             revert ThunderLoan__NotPaidBack(startingBalance + fee, endingBalance);
         }
         s_currentlyFlashLoaning[token] = false;
     }
 
+    //@audit-low you can't use repay to replay a flashloan inside another flashLoan
     function repay(IERC20 token, uint256 amount) public {
         if (!s_currentlyFlashLoaning[token]) {
             revert ThunderLoan__NotCurrentlyFlashLoaning();
@@ -248,6 +254,7 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         token.safeTransferFrom(msg.sender, address(assetToken), amount);
     }
 
+    //@audit-info needs netspec
     function setAllowedToken(IERC20 token, bool allowed) external onlyOwner returns (AssetToken) {
         if (allowed) {
             if (address(s_tokenToAssetToken[token]) != address(0)) {
@@ -267,13 +274,17 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         }
     }
 
+    //@audit-info where is the netspec?
+    //q is the function used for calculating the flashloan fee? - Yes
     function getCalculatedFee(IERC20 token, uint256 amount) public view returns (uint256 fee) {
         //slither-disable-next-line divide-before-multiply
+        //@audit-med this value is manipulatable by moving the tokens in the reserve of tswap pool
         uint256 valueOfBorrowedToken = (amount * getPriceInWeth(address(token))) / s_feePrecision;
         //slither-disable-next-line divide-before-multiply
+        //@audit-high if the fee is going to be in the token, then the value should reflect that
         fee = (valueOfBorrowedToken * s_flashLoanFee) / s_feePrecision;
     }
-    
+
     function updateFlashLoanFee(uint256 newFee) external onlyOwner {
         if (newFee > s_feePrecision) {
             revert ThunderLoan__BadNewFee();
@@ -285,7 +296,7 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
     function isAllowedToken(IERC20 token) public view returns (bool) {
         return address(s_tokenToAssetToken[token]) != address(0);
     }
-    
+
     //@audit-info mark this function as external if not used within the contract
     function getAssetFromToken(IERC20 token) public view returns (AssetToken) {
         return s_tokenToAssetToken[token];

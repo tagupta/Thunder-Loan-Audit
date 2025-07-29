@@ -41,12 +41,6 @@ contract MockFlashLoanReceiver {
         if (msg.sender != s_thunderLoan) {
             revert MockFlashLoanReceiver__onlyThunderLoan();
         }
-        // (bytes memory depositCall, bytes memory redeemCall) = abi.decode(params, (bytes, bytes));
-        // IERC20(token).approve(address(s_thunderLoan), amount);
-        // (bool successDeposit, ) = address(s_thunderLoan).call(depositCall);
-        // require(successDeposit, "Depsoit failed");
-        // (bool successRedeem, ) = address(s_thunderLoan).call(redeemCall);
-        // require(successRedeem, "Redeem failed");
         IERC20(token).approve(s_thunderLoan, amount + fee);
         IThunderLoan(s_thunderLoan).repay(token, amount + fee);
         s_balanceAfterFlashLoan = IERC20(token).balanceOf(address(this));
