@@ -10,6 +10,7 @@ import { IERC20Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.
 import { BuffMockPoolFactory } from "../mocks/BuffMockPoolFactory.sol";
 import { BuffMockTSwap } from "../mocks/BuffMockTSwap.sol";
 import { IFlashLoanReceiver } from "src/interfaces/IFlashLoanReceiver.sol";
+import {ThunderLoanUpgraded} from 'src/upgradedProtocol/ThunderLoanUpgraded.sol';
 
 contract ThunderLoanTest is BaseTest {
     uint256 constant AMOUNT = 10e18;
@@ -262,6 +263,20 @@ contract ThunderLoanTest is BaseTest {
 
         uint256 attackFee = flashLoanReceiver.feeToPayoff();
         assertLt(attackFee, normalFeeCost);
+    }
+
+    //@audit-poc
+    function testUpgradeBreaks() external{
+        uint256 feeBeforeUpgrade = thunderLoan.getFee(); //0.003
+
+        vm.startPrank(thunderLoan.owner());
+        ThunderLoanUpgraded thunderLoanUpgraded = new ThunderLoanUpgraded();
+        thunderLoan.upgradeToAndCall(address(thunderLoanUpgraded), "");
+        vm.stopPrank();
+
+        uint256 feeAfterUpgrade = thunderLoan.getFee(); //1
+
+        assert(feeBeforeUpgrade != feeAfterUpgrade);
     }
 }
 
